@@ -1,0 +1,111 @@
+import numpy as np
+import random
+from scipy.integrate import odeint
+import matplotlib.pyplot as plt
+
+# FitzHugh-Nagumo model
+def fitzhugh_nagumo(X, t, a, I_ext, epsilon, gamma):
+    v, w = X
+    dvdt = v * (v - a) * (1 - v) - w + I_ext
+    dwdt = epsilon * (v - gamma * w)
+    return [dvdt, dwdt]
+
+# Cost function
+def cost_function(params, data, t, I_ext, epsilon, gamma):
+    a = params[0]
+    V0 = data[0, :]  # initial conditions [v0, w0]
+    solution = odeint(fitzhugh_nagumo, V0, t, args=(a, I_ext, epsilon, gamma))
+    error = np.sum((solution[:, 0] - data[:, 0]) ** 2) 
+    return error
+
+# PSO implementation
+class Particle:
+    def __init__(self, bounds):
+        self.position = [random.uniform(bound[0], bound[1]) for bound in bounds]
+        self.velocity = [random.uniform(-1, 1) for _ in bounds]
+        self.best_position = self.position
+        self.best_error = float('inf')
+        self.error = float('inf')
+
+    def evaluate(self, cost_func, data, t, I_ext, epsilon, gamma):
+        self.error = cost_func(self.position, data, t, I_ext, epsilon, gamma)
+        if self.error < self.best_error:
+            self.best_position = self.position.copy()
+            self.best_error = self.error
+
+    def update_velocity(self, global_best_position, w=0.5, c1=1.5, c2=1.5):
+        for i in range(len(self.position)):
+            r1, r2 = random.random(), random.random()
+            cognitive_velocity = c1 * r1 * (self.best_position[i] - self.position[i])
+            social_velocity = c2 * r2 * (global_best_position[i] - self.position[i])
+            self.velocity[i] = w * self.velocity[i] + cognitive_velocity + social_velocity
+
+    def update_position(self, bounds):
+        for i in range(len(self.position)):
+            self.position[i] += self.velocity[i]
+            self.position[i] = max(bounds[i][0], min(self.position[i], bounds[i][1]))
+
+class PSO:
+    def __init__(self, cost_func, bounds, num_particles, max_iter, data, t, I_ext, epsilon, gamma):
+        self.num_particles = num_particles
+        self.max_iter = max_iter
+        self.bounds = bounds
+        self.global_best_position = None
+        self.global_best_error = float('inf')
+        self.swarm = [Particle(bounds) for _ in range(num_particles)]
+        self.cost_func = cost_func
+        self.data = data
+        self.t = t
+        self.I_ext = I_ext
+        self.epsilon = epsilon
+        self.gamma = gamma
+
+    def optimize(self):
+        for i in range(self.max_iter):
+            for particle in self.swarm:
+                particle.evaluate(self.cost_func, self.data, self.t, self.I_ext, self.epsilon, self.gamma)
+                if particle.error < self.global_best_error:
+                    self.global_best_position = particle.best_position.copy()
+                    self.global_best_error = particle.best_error
+
+            for particle in self.swarm:
+                particle.update_velocity(self.global_best_position)
+                particle.update_position(self.bounds)
+
+            if (i+1) % 10 == 0 or i == self.max_iter - 1:
+                print(f"Iteration {i+1}/{self.max_iter}, Global Best Error: {self.global_best_error}")
+
+        return self.global_best_position, self.global_best_error
+
+# Example usage
+t = np.linspace(0, 50, 500)
+true_a = 0.7
+gamma = 0.8
+epsilon = 0.2
+I_ext = 0.75
+V0 = [0, 0]
+
+# Generate synthetic data
+data = odeint(fitzhugh_nagumo, V0, t, args=(true_a, I_ext, epsilon, gamma))
+observed_data = data + np.random.normal(0, 0.05, data.shape)
+
+# PSO to tune parameter a
+bounds = [(0, 1)]
+num_particles = 30
+max_iter = 100
+pso = PSO(cost_function, bounds, num_particles, max_iter, observed_data, t, I_ext, epsilon, gamma)
+best_params, best_error = pso.optimize()
+
+print(f"Best parameter a: {best_params[0]}")
+print(f"Best error: {best_error}")
+
+# Plot results
+best_solution = odeint(fitzhugh_nagumo, V0, t, args=(best_params[0], I_ext, epsilon, gamma))
+plt.plot(t, observed_data[:, 0], 'b-', label='v data')
+plt.plot(t, observed_data[:, 1], 'g-', label='w data')
+plt.plot(t, best_solution[:, 0], 'r--', label='v fit')
+plt.plot(t, best_solution[:, 1], 'y--', label='w fit')
+plt.xlabel('Time')
+plt.ylabel('Variables')
+plt.legend()
+plt.show()
