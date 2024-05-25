@@ -1,0 +1,97 @@
+import numpy as np
+from scipy.integrate import odeint
+import matplotlib.pyplot as plt
+
+# FitzHugh-Nagumo model
+def fitzhugh_nagumo(state, t, a, I_ext, epsilon, gamma):
+    v, w = state
+    dvdt = v * (v - a) * (1 - v) - w + I_ext
+    dwdt = epsilon * (v - gamma * w)
+    return [dvdt, dwdt]
+
+# Generate synthetic data
+true_a = 0.7
+gamma = 0.8
+epsilon = 0.2
+I_ext = 0.75
+t = np.linspace(0, 50, 500)
+initial_state = [0, 0]
+true_params = [true_a, I_ext, epsilon, gamma]
+
+# Solve ODE with true parameters
+sol = odeint(fitzhugh_nagumo, initial_state, t, args=tuple(true_params))
+observed_data_v = sol[:, 0] + np.random.normal(0, 0.05, t.shape)
+observed_data_w=sol[:, 1] + np.random.normal(0, 0.05, t.shape)
+
+
+# Define the objective function for PSO
+def objective_function(params):
+    a = params[0]
+    sol = odeint(fitzhugh_nagumo, initial_state, t, args=(a, I_ext, epsilon, gamma))
+    simulated_data_v = sol[:, 0]
+
+    return np.sum((simulated_data_v - observed_data_v)**2) 
+
+# PSO parameters
+num_particles = 30
+num_iterations = 100
+w = 0.5
+c1 = 1.5
+c2 = 1.5
+
+# Initialize particles
+particles = np.random.rand(num_particles, 1)  # initial guess for parameter a
+velocities = np.random.rand(num_particles, 1) * 0.1
+personal_best_positions = particles.copy()
+personal_best_scores = np.apply_along_axis(objective_function, 1, particles)
+global_best_position = personal_best_positions[np.argmin(personal_best_scores)]
+global_best_score = np.min(personal_best_scores)
+
+# PSO loop
+for iteration in range(num_iterations):
+    for i in range(num_particles):
+        r1, r2 = np.random.rand(), np.random.rand()
+        velocities[i] = (w * velocities[i] +
+                         c1 * r1 * (personal_best_positions[i] - particles[i]) +
+                         c2 * r2 * (global_best_position - particles[i]))
+        particles[i] += velocities[i]
+        
+        score = objective_function(particles[i])
+        if score < personal_best_scores[i]:
+            personal_best_scores[i] = score
+            personal_best_positions[i] = particles[i].copy()
+            if score < global_best_score:
+                global_best_score = score
+                global_best_position = particles[i].copy()
+
+    print(f"Iteration {iteration+1}/{num_iterations}, Global Best Score: {global_best_score}")
+
+print(f"Optimized parameter a: {global_best_position[0]}")
+print(f"Minimum value of the objective function: {global_best_score}")
+
+# Plot the results
+optimized_a = global_best_position[0]
+sol_optimized = odeint(fitzhugh_nagumo, initial_state, t, args=(optimized_a, I_ext, epsilon, gamma))
+
+plt.figure(figsize=(12, 6))
+
+# Plot for v variable
+plt.subplot(2, 1, 1)
+plt.plot(t, observed_data_v, 'b', label='Observed v')
+plt.plot(t, sol_optimized[:, 0], 'r', label='Fitted v')
+plt.legend()
+plt.xlabel('Time')
+plt.ylabel('v')
+plt.title('FitzHugh-Nagumo Model Fitting for v')
+
+# Plot for w variable
+plt.subplot(2, 1, 2)
+plt.plot(t, observed_data_w, 'g', label='Observed w')
+plt.plot(t, sol_optimized[:, 1], 'y', label='Fitted w')
+plt.legend()
+plt.xlabel('Time')
+plt.ylabel('w')
+plt.title('FitzHugh-Nagumo Model Fitting for w')
+
+plt.tight_layout()
+plt.show()
