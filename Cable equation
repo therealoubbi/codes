@@ -1,0 +1,92 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation
+
+# Parameters
+D = 1.0         # Diffusion coefficient (cm^2/s)
+tau = 10.0      # Membrane time constant (ms)
+L = 1.0         # Length of the cable (cm)
+T = 1000     # Total simulation time (ms)
+
+# Discretization parameters
+Nx = 100        # Number of spatial points
+Nt = 50       # Number of time steps
+
+dx = L / (Nx - 1)           # Spatial step size
+dt = T / Nt                 # Time step size
+
+# Stability condition for explicit method
+alpha = D * dt / dx**2
+print(alpha)
+if alpha > 0.5: 
+    print("Warning: The solution may be unstable. Consider reducing dt or increasing dx.")
+
+# Initialize voltage array
+V = np.zeros(Nx)
+V_new = np.zeros(Nx)
+x = np.linspace(0, L, Nx)
+
+# Initial condition: localized disturbance in the middle
+V[int(Nx / 2)] = 1.0
+
+# Boundary conditions (Dirichlet)
+V[0] = 0.0
+V[-1] = 0.0
+
+# Precompute constant
+beta = dt / tau
+
+# Lists to store voltage profiles for animation
+V_list = []
+
+# Time-stepping loop
+for n in range(Nt):
+    # Compute the second spatial derivative using finite differences
+    for i in range(1, Nx - 1):
+        d2V_dx2 = (V[i + 1] - 2 * V[i] + V[i - 1]) / dx**2
+        V_new[i] = V[i] + dt * (D * d2V_dx2 - V[i] / tau)
+    
+    # Update boundary conditions
+    V_new[0] = 0.0
+    V_new[-1] = 0.0
+    
+    # Update voltage for next time step
+    V = V_new.copy()
+    
+    # Store every 50th profile for animation
+    if n % 50 == 0:
+        V_list.append(V.copy())
+
+# Plot the final voltage profile
+plt.figure(figsize=(8, 5))
+plt.plot(x, V, label='Voltage at final time')
+plt.xlabel('Position along the cable (cm)')
+plt.ylabel('Membrane Potential V(x, T)')
+plt.title('Cable Equation Simulation')
+plt.legend()
+plt.grid(True)
+plt.show()
+
+# Animation of voltage propagation
+fig, ax = plt.subplots(figsize=(8, 5))
+line, = ax.plot([], [], lw=2)
+ax.set_xlim(0, L)
+ax.set_ylim(-0.1, 1.1)
+ax.set_xlabel('Position along the cable (cm)')
+ax.set_ylabel('Membrane Potential V(x, t)')
+ax.set_title('Propagation of Membrane Potential along the Cable')
+ax.grid(True)
+
+def init():
+    line.set_data([], [])
+    return line,
+
+def animate(i):
+    y = V_list[i]
+    line.set_data(x, y)
+    return line,
+
+ani = FuncAnimation(fig, animate, frames=len(V_list), init_func=init,
+                    blit=True, interval=50, repeat=False)
+
+plt.show()
