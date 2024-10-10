@@ -1,0 +1,108 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation
+
+# Parameters
+a = 0.7
+gamma = 0.8
+epsilon = 0.2
+I_ext = 0.75
+
+D_v = 1.0      # Diffusion coefficient for v
+D_w = 0.5      # Diffusion coefficient for w
+
+L = 100.0      # Length of the spatial domain
+T = 200.0      # Total simulation time
+
+# Discretization parameters
+Nx = 200        # Number of spatial points
+Nt = 5000       # Number of time steps
+
+dx = L / (Nx - 1)           # Spatial step size
+dt = T / Nt                 # Time step size
+
+# Stability condition for explicit method
+alpha_v = D_v * dt / dx**2
+alpha_w = D_w * dt / dx**2
+if alpha_v > 0.5 or alpha_w > 0.5:
+    print("Warning: The solution may be unstable. Consider reducing dt or increasing dx.")
+
+# Spatial grid
+x = np.linspace(0, L, Nx)
+
+# Initialize variables
+v = np.zeros(Nx)
+w = np.zeros(Nx)
+v_new = np.zeros(Nx)
+w_new = np.zeros(Nx)
+
+# Initial conditions: small perturbation in the middle
+v[int(Nx / 2 - 5):int(Nx / 2 + 5)] = 0.5
+w[int(Nx / 2 - 5):int(Nx / 2 + 5)] = 0.5
+
+# Lists to store variables for animation
+v_list = []
+w_list = []
+
+# Time-stepping loop
+for n in range(Nt):
+    # Compute the Laplacian using finite differences
+    v_xx = np.zeros(Nx)
+    w_xx = np.zeros(Nx)
+    
+    v_xx[1:-1] = (v[2:] - 2 * v[1:-1] + v[:-2]) / dx**2
+    w_xx[1:-1] = (w[2:] - 2 * w[1:-1] + w[:-2]) / dx**2
+    
+    # Update equations
+    v_new[1:-1] = v[1:-1] + dt * (D_v * v_xx[1:-1] + v[1:-1] * (v[1:-1] - a) * (1 - v[1:-1]) - w[1:-1] + I_ext)
+    w_new[1:-1] = w[1:-1] + dt * (D_w * w_xx[1:-1] + epsilon * (v[1:-1] - gamma * w[1:-1]))
+    
+    # Neumann boundary conditions (zero flux at boundaries)
+    v_new[0] = v_new[1]
+    v_new[-1] = v_new[-2]
+    w_new[0] = w_new[1]
+    w_new[-1] = w_new[-2]
+    
+    # Update variables
+    v = v_new.copy()
+    w = w_new.copy()
+    
+    # Store every 50th step for animation
+    if n % 50 == 0:
+        v_list.append(v.copy())
+        w_list.append(w.copy())
+
+# Create animation of v
+fig, ax = plt.subplots(figsize=(8, 5))
+line, = ax.plot([], [], lw=2)
+ax.set_xlim(0, L)
+ax.set_ylim(-0.5, 1.5)
+ax.set_xlabel('Position x')
+ax.set_ylabel('Membrane Potential v(x, t)')
+ax.set_title('Propagation of Action Potential')
+ax.grid(True)
+
+def init():
+    line.set_data([], [])
+    return line,
+
+def animate(i):
+    y = v_list[i]
+    line.set_data(x, y)
+    return line,
+
+ani = FuncAnimation(fig, animate, frames=len(v_list), init_func=init,
+                    blit=True, interval=50, repeat=False)
+
+plt.show()
+
+# Plot the final state of v and w
+plt.figure(figsize=(8, 5))
+plt.plot(x, v, label='v (Membrane Potential)')
+plt.plot(x, w, label='w (Recovery Variable)')
+plt.xlabel('Position x')
+plt.ylabel('Value')
+plt.title('Final State of v and w')
+plt.legend()
+plt.grid(True)
+plt.show()
