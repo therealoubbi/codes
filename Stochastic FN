@@ -1,0 +1,47 @@
+import numpy as np
+import sdeint
+import matplotlib.pyplot as plt
+
+# Parameters for the model
+a = 0.7
+gamma = 0.8
+epsilon = 0.2
+I_ext = 0.75
+sigma_v = 0.1  # Noise intensity for v
+sigma_w = 0.1  # Noise intensity for w
+
+
+# Define the drift (deterministic part)
+def f(VW, t):
+    v, w = VW
+    dv = v * (v - a) * (1 - v) - w + I_ext
+    dw = epsilon * (v - gamma * w)
+    return np.array([dv, dw])
+
+# Define the diffusion (stochastic part)
+def g(VW, t):
+    v, w = VW
+    return np.array([[sigma_v, 0], [0, sigma_w]])
+
+# Initial conditions
+v0 = 0  # Initial value for v
+w0 = 0  # Initial value for w
+VW0 = np.array([v0, w0])  # Combine into a single vector
+
+# Time grid
+T = 100.0
+dt = 0.01
+t = np.arange(0, T, dt)
+
+# Solve the SDE using Ito calculus
+sol = sdeint.itoint(f, g, VW0, t)
+
+# Plot the results
+plt.figure(figsize=(10, 5))
+plt.plot(t, sol[:, 0], label='v(t)')
+plt.plot(t, sol[:, 1], label='w(t)')
+plt.title("Stochastic FitzHugh-Nagumo Model")
+plt.xlabel("Time")
+plt.ylabel("v, w")
+plt.legend()
+plt.show()
