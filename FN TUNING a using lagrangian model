@@ -1,0 +1,100 @@
+import numpy as np
+from scipy.integrate import odeint, quad
+from scipy.interpolate import interp1d
+import matplotlib.pyplot as plt
+import time
+
+start_time = time.time() 
+
+t0 = 0
+tf = 100
+true_a = 0.7
+I_ext = 0.75
+u0 = 0
+t = np.linspace(0, 100, 100)
+
+
+v0 = np.array([0])
+params_initial = [0.5]
+
+alpha = 1e-5 # Reduced learning rate more aggressively
+tolerance = 1e-6
+max_iterations = 250
+grad_clip_threshold = 1e2  # Gradient clipping threshold
+
+
+def fitzhugh_nagumo(u, t, a, I_ext):
+    dudt = u * (u - a) * (1 - u) + I_ext
+    return dudt
+
+
+u_obs = odeint(fitzhugh_nagumo, u0, t, args=(true_a, I_ext))
+
+def direct_problem(u, t, params):
+    a = params
+    w = 0
+    dudt = u * (u - a) * (1 - u) - w + I_ext
+    return dudt
+
+def adjoint_problem(v, t, params, u_interp, u_obs_interp):
+    a = params
+    u_t = u_interp(tf-t)
+    u_obs_t = u_obs_interp(tf-t)
+    dvdt = -(-3 * u_t**2 + 2 * u_t * (1 + a) - a) * v - (u_t - u_obs_t)
+    return dvdt
+
+
+def cost_functional(u, u_obs, params):
+    
+    return 0.5 * np.sum((u - u_obs)**2) 
+
+
+
+params = np.array(params_initial)
+
+
+for iteration in range(max_iterations):
+    u = odeint(direct_problem, u0, t, args=(params,), atol=1e-8, rtol=1e-8)
+    u_interp = interp1d(tf-t, u.flatten(), fill_value="extrapolate")
+    u_obs_interp = interp1d(tf-t, u_obs.flatten(), fill_value="extrapolate")
+    
+    v = odeint(adjoint_problem, v0, t, args=(params, u_interp, u_obs_interp), atol=1e-8, rtol=1e-8)
+   
+    
+    def integrand(t_val):
+        u_t = u_interp(t_val)
+        v_t = np.interp(t_val, t, v.flatten())
+        return - (-3 * u_t**2 + 2 * u_t * (1 + params) - params) * v_t
+
+    result, error = quad(integrand, t0, tf, limit=100)
+    grad = result
+
+    # Gradient clipping
+    if np.abs(grad) > grad_clip_threshold:
+        grad = np.sign(grad) * grad_clip_threshold
+
+    params -= alpha * grad
+
+    cost = cost_functional(u, u_obs, params)
+    print(f"Iteration {iteration + 1}, Cost: {cost:.6f}, Params a : {params}")
+
+    if np.linalg.norm(u-u_obs) < tolerance:
+        break
+
+final_params = params
+
+print(final_params)
+
+
+best_solution = odeint(fitzhugh_nagumo, u0, t, args=(final_params, I_ext,))
+
+end_time = time.time()  # Record the end time
+execution_time = end_time - start_time  # Calculate the time difference
+print(f"Execution time: {execution_time} seconds")
+
+plt.plot(t, u_obs[:], 'b-', label='v data')
+plt.plot(t, best_solution[:], 'r--', label='v fit')
+plt.xlabel('Time')
+plt.ylabel('Variables')
+plt.legend()
+plt.show()
